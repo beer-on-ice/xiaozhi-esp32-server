@@ -25,7 +25,7 @@ def get_db_connection(conn, database: str):
     logger.bind(tag=TAG).info(f"连接数据库: {database}")
     db_conf = conn.config["plugins"].get("db_conf", {})  # 统一配置
     return pymysql.connect(
-        host=db_conf.get("host", "192.168.17.100"),
+        host=db_conf.get("host", "58.211.186.6"),
         port=int(db_conf.get("port", 3306)),
         user=db_conf.get("user", "wsluser"),
         password=db_conf.get("password", "123456"),

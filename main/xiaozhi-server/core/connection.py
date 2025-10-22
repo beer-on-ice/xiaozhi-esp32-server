@@ -72,6 +72,9 @@ class ConnectionHandler:
         self.bind_code = None
         self.read_config_from_api = self.config.get("read_config_from_api", False)
 
+        self.master_mode = None
+        self.master_speaker_name = None
+
         self.websocket = None
         self.headers = None
         self.device_id = None

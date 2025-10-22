@@ -63,9 +63,16 @@ async def startToChat(conn, text):
     else:
         conn.current_speaker = None
 
+
+    # --- 插入"主人模式"逻辑 ---
+    if await _handle_master_mode(conn, actual_text, speaker_name):
+        return
+    # --- "主人模式"逻辑结束 ---
+
     if conn.need_bind:
         await check_bind_device(conn)
         return
+
 
     # 如果当日的输出字数大于限定的字数
     if conn.max_output_size > 0:
@@ -164,3 +171,58 @@ async def check_bind_device(conn):
         music_path = "config/assets/bind_not_found.wav"
         opus_packets = audio_to_data(music_path)
         conn.tts.tts_audio_queue.put((SentenceType.LAST, opus_packets, text))
+
+async def _play_master_mode_tts(conn, text):
+    """
+    辅助函数：用于直接进行 TTS 播报
+    """
+    # 参照startToChat方法的实现方式
+    await send_stt_message(conn, text)
+    # 提交聊天任务，但使用直接的文本而不是通过大模型
+    conn.executor.submit(conn.chat, text)
+
+async def _handle_master_mode(conn, actual_text, speaker_name):
+    """
+    处理主人模式的逻辑
+    """
+
+    master_mode_on_text = "主人模式"
+    master_mode_off_text = "路人模式"
+
+    if master_mode_on_text in actual_text:
+        if speaker_name and speaker_name != "未知说话人":
+            if conn.master_mode and conn.master_speaker_name == speaker_name:
+                conn.logger.bind(tag=TAG).info(f"主人模式已开启，无需重复操作。")
+                await _play_master_mode_tts(conn, "直接提醒主人模式已经开启，无需重复操作。")
+                return True
+            conn.master_mode = True
+            conn.master_speaker_name = speaker_name
+            conn.logger.bind(tag=TAG).info(f"开启主人模式，主人为: {speaker_name}")
+            await _play_master_mode_tts(conn, f"{speaker_name}希望开启主人模式，你开启一个主人模式，并直接提醒已经开启了。")
+            return True
+        else:
+            conn.logger.bind(tag=TAG).info("未识别到您的声纹，无法开启主人模式。")
+            await _play_master_mode_tts(conn, "直接提醒是未识别到的声纹，所以无法开启主人模式。")
+            return True
+    elif master_mode_off_text in actual_text:
+        if conn.master_mode and speaker_name == conn.master_speaker_name:
+            conn.master_mode = False
+            conn.master_speaker_name = None
+            conn.logger.bind(tag=TAG).info(f"关闭主人模式，主人为: {speaker_name}")
+            await _play_master_mode_tts(conn, f"{speaker_name}希望关闭之前的主人模式，你关闭主人模式，并直接提醒已经关闭了。")
+            return True
+        elif not conn.master_mode:
+            conn.logger.bind(tag=TAG).info("主人模式未开启，无需关闭。")
+            await _play_master_mode_tts(conn, f"直接提醒主人模式尚未开启，无需关闭。")
+            return True
+        else:
+            conn.logger.bind(tag=TAG).info(f"非主人 {speaker_name} 尝试关闭主人模式。")
+            await _play_master_mode_tts(conn, f"{speaker_name}尝试关闭主人模式，直接提醒当前用户没有权限关闭主人模式。")
+            return True
+
+    if conn.master_mode and speaker_name != conn.master_speaker_name:
+        conn.logger.bind(tag=TAG).info(f"主人模式已开启，非主人 {speaker_name} 尝试交流。")
+        await _play_master_mode_tts(conn, f"直接提醒当前是{speaker_name}，并非开启主人模式的人，所以不能进行对话。")
+        return True
+
+    return False
